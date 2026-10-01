@@ -1,0 +1,74 @@
+name: DeepEval Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deepeval-tests/**"
+      - "llm-multiroute/**"
+      - "docker-compose.yml"
+      - ".github/workflows/deepeval-tests-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "deepeval-tests/**"
+      - "llm-multiroute/**"
+      - "docker-compose.yml"
+      - ".github/workflows/deepeval-tests-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+  OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+  OTEL_SDK_DISABLED: "true"
+
+jobs:
+  deepeval:
+    name: DeepEval LLM evaluations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: deepeval-tests/requirements.txt
+      - name: Install dependencies
+        working-directory: deepeval-tests
+        run: python -m pip install -r requirements.txt
+      - name: Lint evaluation suite
+        working-directory: deepeval-tests
+        run: ruff check .
+      - name: Start backend
+        run: docker compose up --build -d llm-multiroute
+      - name: Wait for backend
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8080/api/ai/routes >/dev/null; then
+              exit 0
+            fi
+            echo "Backend readiness attempt ${attempt}/30"
+            sleep 5
+          done
+          docker compose logs llm-multiroute
+          exit 1
+      - name: Run classify evaluations
+        working-directory: deepeval-tests
+        run: deepeval test run test_classify.py -v
+      - name: Run sentiment evaluations
+        working-directory: deepeval-tests
+        run: deepeval test run test_sentiment.py -v
+      - name: Run summarize evaluations
+        working-directory: deepeval-tests
+        run: deepeval test run test_summarize.py -v
+      - name: Run intent evaluations
+        working-directory: deepeval-tests
+        run: deepeval test run test_intent.py -v
+      - name: Stop backend
+        if: always()
+        run: docker compose down --volumes

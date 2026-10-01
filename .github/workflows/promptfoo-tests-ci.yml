@@ -1,0 +1,62 @@
+name: Promptfoo Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "promptfoo-tests/**"
+      - "llm-multiroute/**"
+      - "docker-compose.yml"
+      - ".github/workflows/promptfoo-tests-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "promptfoo-tests/**"
+      - "llm-multiroute/**"
+      - "docker-compose.yml"
+      - ".github/workflows/promptfoo-tests-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+  OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
+  OTEL_SDK_DISABLED: "true"
+
+jobs:
+  promptfoo:
+    name: Promptfoo evaluations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.22.0"
+          cache: npm
+          cache-dependency-path: promptfoo-tests/package-lock.json
+      - name: Install Promptfoo
+        working-directory: promptfoo-tests
+        run: npm ci
+      - name: Start backend
+        run: docker compose up --build -d llm-multiroute
+      - name: Wait for backend
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8080/api/ai/routes >/dev/null; then
+              exit 0
+            fi
+            echo "Backend readiness attempt ${attempt}/30"
+            sleep 5
+          done
+          docker compose logs llm-multiroute
+          exit 1
+      - name: Run all Promptfoo evaluations
+        working-directory: promptfoo-tests
+        env:
+          PROMPTFOO_DISABLE_TELEMETRY: "true"
+        run: npm run eval
+      - name: Stop backend
+        if: always()
+        run: docker compose down --volumes

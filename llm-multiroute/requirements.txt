@@ -1,0 +1,12 @@
+fastapi==0.142.2
+uvicorn==0.32.1
+httpx==0.28.1
+pydantic==2.13.5
+python-dotenv==1.0.1
+langfuse==4.16.0
+guardrails-ai==0.11.0
+# Secure transitive floors identified by the container vulnerability scan.
+msgpack==1.2.3
+pip==26.2.1
+setuptools==84.0.0
+urllib3==2.8.0

@@ -1,0 +1,4 @@
+deepeval==4.2.7
+requests==2.34.2
+pytest==8.3.3
+ruff==0.16.10
